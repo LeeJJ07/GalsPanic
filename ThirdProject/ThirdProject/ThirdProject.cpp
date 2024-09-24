@@ -17,7 +17,7 @@
 using namespace std;
 
 #define MAX_LOADSTRING 100
-#define TIMER_01 1 
+#define TIMER_01 1
 
 enum State { BLANK, WALL, INSIDE, ROAD, BACK};
 const int dy[8] = { -1, 0, 1, 0, -1, 1, 1, -1 };
@@ -34,6 +34,7 @@ vector<pair<int, int>> myWall;
 vector<pair<int, int>> myRoad;
 vector<vector<int>> visited;
 
+bool isInside;
 int _cnt = 0;
 
 HBITMAP hFrontImage;
@@ -49,6 +50,7 @@ void UpdateWall();
 void Fillinside();
 void _Fillinside(vector<vector<int>>& visited, int y, int x, int level);
 void WallToInside();
+bool IsInside();
 
 //최적화 완료
 void Test(HBRUSH hOldBrush, HDC hMemDC);
@@ -344,74 +346,97 @@ void DrawBitmapDoubleBuffering(HWND hWnd, HDC hdc)
         SelectObject(hMemDC, hOldBitmap);
         DeleteDC(hMemDC);
     }
-    
+
+    hMemDC = CreateCompatibleDC(hDoubleBufferDC);
+    hOldBitmap = (HBITMAP)SelectObject(hMemDC, hFrontImage);
+
+    HPEN Null_Pen = (HPEN)GetStockObject(NULL_PEN);
+    HPEN hOldPen = (HPEN)SelectObject(hMemDC, Null_Pen);
+    HPEN hRedPen = CreatePen(PS_DOT, 2, RGB(255, 0, 0));
+    HPEN hWhitePen = CreatePen(PS_DOT, 2, RGB(255, 255, 255));
+
+    // 브러시 미리 생성
+    HBRUSH magentaBrush = CreateSolidBrush(RGB(255, 0, 255));
+    HBRUSH blackBrush = CreateSolidBrush(RGB(0, 0, 0));
+    HBRUSH hOldBrush;
+
+	if (!isInside)
+	{
+		// >> : MAGENTA 브러쉬로 폴리곤 그리기
+		hOldBrush = (HBRUSH)SelectObject(hMemDC, magentaBrush);
+		POINT* temp = new POINT[myWall.size()];
+		for (int idx = 0; idx < myWall.size(); idx++)
+		{
+			temp[idx].x = myWall[idx].first * 11;
+			temp[idx].y = myWall[idx].second * 11;
+		}
+		Polygon(hMemDC, temp, myWall.size());
+		SelectObject(hMemDC, hOldBrush);
+		delete[]temp;
+		// << :
+	}
+    else
     {
-        hMemDC = CreateCompatibleDC(hDoubleBufferDC);
-        hOldBitmap = (HBITMAP)SelectObject(hMemDC, hFrontImage);
+		// >> : MAGENTA 브러쉬로 전체 색칠
+        hOldBrush = (HBRUSH)SelectObject(hMemDC, magentaBrush);
+        POINT temp[4] = { {0, 0}, {110 * 11, 0}, {110 * 11, 58 * 11}, {0, 58 * 11} };
+		Polygon(hMemDC, temp, 4);
+		SelectObject(hMemDC, hOldBrush);
+		// << :
 
-        HPEN Null_Pen = (HPEN)GetStockObject(NULL_PEN);
-        HPEN hOldPen = (HPEN)SelectObject(hMemDC, Null_Pen);
-        HPEN hRedPen = CreatePen(PS_DOT, 2, RGB(255, 0, 0));
-        HPEN hWhitePen = CreatePen(PS_DOT, 2, RGB(255, 255, 255));
-
-        // 브러시 미리 생성
-        HBRUSH magentaBrush = CreateSolidBrush(RGB(255, 0, 255));
-        HBRUSH hOldBrush;
-
-        // >> : MAGENTA 펜으로 폴리곤 그리기
+        // >> : BLACK 브러쉬로 폴리곤 그리기
+        hOldBrush = (HBRUSH)SelectObject(hMemDC, blackBrush);
+        POINT* temp1 = new POINT[myWall.size()];
+        for (int idx = 0; idx < myWall.size(); idx++)
         {
-            hOldBrush = (HBRUSH)SelectObject(hMemDC, magentaBrush);
-            POINT* temp = new POINT[myWall.size()];
-            for (int idx = 0; idx < myWall.size(); idx++)
-            {
-                temp[idx].x = myWall[idx].first * 11;
-                temp[idx].y = myWall[idx].second * 11;
-            }
-            Polygon(hMemDC, temp, myWall.size());
-            SelectObject(hMemDC, hOldBrush);
-            delete[]temp;
+            temp1[idx].x = myWall[idx].first * 11;
+            temp1[idx].y = myWall[idx].second * 11;
         }
+        Polygon(hMemDC, temp1, myWall.size());
+        SelectObject(hMemDC, hOldBrush);
+        delete[]temp1;
+        DeleteObject(blackBrush);
         // << :
+    }
 
-        // >> : RED 펜으로 길 그리기
+    // >> : RED 펜으로 길 그리기
+    {
+        hOldPen = (HPEN)SelectObject(hMemDC, hRedPen);
+        for (int idx = 1; idx < myRoad.size(); idx++)
         {
-            hOldPen = (HPEN)SelectObject(hMemDC, hRedPen);
-            for (int idx = 1; idx < myRoad.size(); idx++)
-            {
-                MoveToEx(hMemDC, myRoad[idx - 1].first * 11, myRoad[idx - 1].second * 11, nullptr);
-                LineTo(hMemDC, myRoad[idx].first * 11, myRoad[idx].second * 11);
-            }
-            SelectObject(hMemDC, hOldPen); //현재영역에 대한 펜을 원래 있던 펜으로 다시 적용
-            DeleteObject(hRedPen); //사용이 끝난 펜 해제
+            MoveToEx(hMemDC, myRoad[idx - 1].first * 11, myRoad[idx - 1].second * 11, nullptr);
+            LineTo(hMemDC, myRoad[idx].first * 11, myRoad[idx].second * 11);
         }
-        // << :
+        SelectObject(hMemDC, hOldPen); //현재영역에 대한 펜을 원래 있던 펜으로 다시 적용
+        DeleteObject(hRedPen); //사용이 끝난 펜 해제
+    }
+    // << :
 
-        // >> : WHITE 펜으로 벽 그리기
-        if (myWall.size())
+    // >> : WHITE 펜으로 벽 그리기
+    if (myWall.size())
+    {
+        hOldPen = (HPEN)SelectObject(hMemDC, hWhitePen);
+        for (int idx = 1; idx < myWall.size(); idx++)
         {
-            hOldPen = (HPEN)SelectObject(hMemDC, hWhitePen);
-            for (int idx = 1; idx < myWall.size(); idx++)
-            {
-                MoveToEx(hMemDC, myWall[idx - 1].first * 11, myWall[idx - 1].second * 11, nullptr);
-                LineTo(hMemDC, myWall[idx].first * 11, myWall[idx].second * 11);
-            }
-            MoveToEx(hMemDC, myWall[myWall.size() - 1].first * 11, myWall[myWall.size() - 1].second * 11, nullptr);
-            LineTo(hMemDC, myWall[0].first * 11, myWall[0].second * 11);
-
-            SelectObject(hMemDC, hOldPen); //현재영역에 대한 펜을 원래 있던 펜으로 다시 적용
-            DeleteObject(hWhitePen); //사용이 끝난 펜 해제
+            MoveToEx(hMemDC, myWall[idx - 1].first * 11, myWall[idx - 1].second * 11, nullptr);
+            LineTo(hMemDC, myWall[idx].first * 11, myWall[idx].second * 11);
         }
-        // << :
-        
-        TransparentBlt(hDoubleBufferDC, 100, 100, bx + 3, by + 3, hMemDC, 0, 0, bx, by, RGB(255, 0, 255));
+        MoveToEx(hMemDC, myWall[myWall.size() - 1].first * 11, myWall[myWall.size() - 1].second * 11, nullptr);
+        LineTo(hMemDC, myWall[0].first * 11, myWall[0].second * 11);
 
         SelectObject(hMemDC, hOldPen);
-        SelectObject(hMemDC, hOldBitmap);
-        DeleteDC(hMemDC);
-
-        // 브러시 해제
-        DeleteObject(magentaBrush);
+        DeleteObject(hWhitePen);
     }
+    // << :
+
+    TransparentBlt(hDoubleBufferDC, 100, 100, bx + 3, by + 3, hMemDC, 0, 0, bx, by, RGB(255, 0, 255));
+
+    SelectObject(hMemDC, hOldPen);
+    SelectObject(hMemDC, hOldBitmap);
+    DeleteDC(hMemDC);
+
+    // 브러시 해제
+    DeleteObject(magentaBrush);
     
     BitBlt(hdc, 0, 0, rectView.right, rectView.bottom, hDoubleBufferDC, 0, 0, SRCCOPY);
     Ellipse(hdc, player.x * 11 + start.x - 10, player.y * 11 + start.y - 10, 
@@ -514,6 +539,7 @@ void PlayerController()
         Fillinside();
         WallToInside();
         UpdateWall();
+        isInside = IsInside();
 
         myRoad.clear();
     }
@@ -535,30 +561,6 @@ void PlayerController()
     }
 }
 
-void _UpdateWall(int y, int x, int dir)
-{
-    if (dir != -1 && y == startWall.y && x == startWall.x)
-        return; //다시 시작점으로 돌아온 케이스
-    for (int i = 0; i < 4; i++)
-    {
-        int ny = y + dy[i];
-        int nx = x + dx[i];
-
-        if (mapData[ny][nx] != WALL || visited[ny][nx] != 0)
-            continue;
-        if (dir != i) myWall.push_back({ x, y });
-        visited[ny][nx] = 1;
-        _UpdateWall(ny, nx, i);
-    }
-}
-void UpdateWall()
-{
-    myWall.clear();
-
-    _UpdateWall(startWall.y, startWall.x, -1);
-
-    //fill(visited.begin(), visited.end(), std::vector<int>(maxIdx.x, 0));
-}
 
 void Fillinside()
 {
@@ -624,6 +626,43 @@ void WallToInside()
             if (idx == 8) mapData[y][x] = INSIDE;
         }
     }
+}
+void _UpdateWall(int y, int x, int dir)
+{
+    if (dir != -1 && y == startWall.y && x == startWall.x)
+        return; //다시 시작점으로 돌아온 케이스
+    for (int i = 0; i < 4; i++)
+    {
+        int ny = y + dy[i];
+        int nx = x + dx[i];
+
+        if (mapData[ny][nx] != WALL || visited[ny][nx] != 0)
+            continue;
+        if (dir != i) myWall.push_back({ x, y });
+        visited[ny][nx] = 1;
+        _UpdateWall(ny, nx, i);
+    }
+}
+void UpdateWall()
+{
+    myWall.clear();
+
+    _UpdateWall(startWall.y, startWall.x, -1);
+
+    //fill(visited.begin(), visited.end(), std::vector<int>(maxIdx.x, 0));
+}
+bool IsInside()
+{
+    int countLine = 0;
+    for (int i = 1; i < myWall.size(); i++)
+    {
+        if ((myWall[i - 1].second > bossPos.y && myWall[i].second < bossPos.y) || (myWall[i - 1].second < bossPos.y && myWall[i].second > bossPos.y))
+            countLine += bossPos.x < myWall[i - 1].first ? 1 : 0;
+    }
+    if ((myWall[0].second > bossPos.y && myWall[myWall.size()-1].second < bossPos.y) || (myWall[0].second < bossPos.y && myWall[myWall.size() - 1].second > bossPos.y))
+        countLine += bossPos.x < myWall[0].first ? 1 : 0;
+    
+    return (countLine) % 2;
 }
 
 void Test(HBRUSH hOldBrush, HDC hMemDC)
