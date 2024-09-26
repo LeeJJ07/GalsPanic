@@ -462,7 +462,7 @@ void PlayerController()
     DWORD newTime = GetTickCount64();
     static DWORD oldTime = newTime;
 
-    if (newTime - oldTime < 20)
+    if (newTime - oldTime < 5)
         return;
 
     oldTime = newTime;
